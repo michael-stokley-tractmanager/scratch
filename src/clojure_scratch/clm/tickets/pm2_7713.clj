@@ -181,8 +181,8 @@
 (def pattern
   '[* {:workflow.form/sectionmaps
        [* {:form.sectionmap/section
-           [{:workflow.section/fieldmaps
-             [:workflow.fieldmap/field
+           [* {:workflow.section/fieldmaps
+             [* :workflow.fieldmap/field
               :workflow.fieldmap/ordinal
               :workflow.fieldmap/id
               :workflow.fieldmap/triggers
@@ -202,6 +202,9 @@
 (comment
 
   (def prod-client (db-util/prod-client!))
+
+  (def baseline-conn (d/connect prod-client {:db-name baseline-dbn}))
+  (def training-conn (d/connect prod-client {:db-name training-dbn}))
 
   @(def all-production-databases
      (d/list-databases prod-client {}))
@@ -224,5 +227,55 @@
   ;; => [nil nil]
 
   ;; so right now they're identical
+
+  (d/q '[:find (pull ?e [*])
+         :where
+         [?e :workflow.fieldmap/id #uuid "cc771d70-a600-4537-a0ee-85f112408995"]]
+       (d/db baseline-conn))
+
+  @(def baseline-form-template-history-arbitrary-fieldmap
+    (let [conn (d/connect prod-client {:db-name baseline-dbn})
+          history-db (d/history (d/db conn))]
+      (d/q '[:find ?tx ?val ?op
+             :where
+             [?fielmap :workflow.fieldmap/hidden? ?val ?tx ?op]
+             [?fielmap :workflow.fieldmap/id #uuid "cc771d70-a600-4537-a0ee-85f112408995"]
+             ]
+           history-db)))
+  ;; => [[13194139534236 true true]]
+
+  @(def training-form-template-history-arbitrary-fieldmap
+     (let [conn (d/connect prod-client {:db-name training-dbn})
+           history-db (d/history (d/db conn))]
+       (d/q '[:find ?tx ?val ?op
+              :where
+              [?fielmap :workflow.fieldmap/hidden? ?val ?tx ?op]
+              [?fielmap :workflow.fieldmap/id #uuid "cc771d70-a600-4537-a0ee-85f112408995"]
+              ]
+            history-db)))
+  ;; => [[13194139534238 true true]]
+
+  @(def training-form-template-history-all-fieldmaps-for-first-section
+     (let [history-db (d/history (d/db training-conn))]
+       (d/q '[:find ?tx ?val ?op ?workflow-fieldmap-id
+              :in $ ?section
+              :where
+              [?fieldmap :workflow.fieldmap/hidden? ?val ?tx ?op]
+              [?fieldmap :workflow.fieldmap/id ?workflow-fieldmap-id]
+              [?section :workflow.section/fieldmaps ?fieldmap]]
+            history-db 83562883715272)))
+
+  ;; [[13194139538714 true true #uuid "ff1ef28f-f05c-4a5e-9b6f-65e9adf173a3"]
+  ;;  [13194139534238 true true #uuid "883f3549-75ae-4995-99ec-888122025484"]
+  ;;  [13194139535429 true true #uuid "2daad32b-97c0-4107-9fa8-080e9013d4a9"]
+  ;;  [13194139535430 true false #uuid "b70973b2-6075-4bc5-bda6-6e467b5abbd3"]
+  ;;  [13194139534238 true true #uuid "cc771d70-a600-4537-a0ee-85f112408995"]
+  ;;  [13194139538714 true true #uuid "d352eef9-469a-4033-9d64-72a183642eb8"]
+  ;;  [13194139538709 true true #uuid "c3ecdfba-51d5-46b4-b8e2-12c85cdbb159"]
+  ;;  [13194139538709 true true #uuid "cbe07d36-a2a1-4bc9-ba12-f17300146bd9"]
+  ;;  [13194139534238 true true #uuid "b70973b2-6075-4bc5-bda6-6e467b5abbd3"]
+  ;;  [13194139538709 true true #uuid "4b134f46-42bc-4138-ae68-c5e3c4a9b913"]]
+
+  ;; SUS
 
   )
