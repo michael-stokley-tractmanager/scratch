@@ -1,6 +1,8 @@
 (ns clojure-scratch.clm.tickets.pm2-7713
   (:require [datomic.client.api :as d]
             [clojure.data :as data]
+            [clojure.walk :as w]
+            [clojure-scratch.clm.db :as db-util]
             [db.conn-v2 :as conn]
             [portal.api :as p]
             [commons.config :as config]))
@@ -169,41 +171,58 @@
 
   )
 
+
+(def provider-employment-initiation-form-template-id
+  [:workflow.form/id #uuid "7419cbe7-d25a-4303-9846-cb2c4e6b2b34"])
+
+(def baseline-dbn "capitalhsi-baseline")
+(def training-dbn "capitalhsi-training")
+
+(def pattern
+  '[* {:workflow.form/sectionmaps
+       [* {:form.sectionmap/section
+           [{:workflow.section/fieldmaps
+             [:workflow.fieldmap/field
+              :workflow.fieldmap/ordinal
+              :workflow.fieldmap/id
+              :workflow.fieldmap/triggers
+              :workflow.fieldmap/hidden?]}]}]}])
+
+(defn strip-eids
+  "remove all :db/id from a nested data structure
+
+  useful for getting a more meaningful diff across data that has been cloned,
+  since we wouldn't expect the eids to match anyway"
+  [form]
+  (w/postwalk
+   (fn [form]
+            (if (map? form) (dissoc form :db/id) form))
+          form))
+
 (comment
-  (def prod-config {:server-type   :cloud
-                    :region        "us-east-2"
-                    :system        "meditract"
-                    :endpoint      "http://entry.tempquerygroup.us-east-2.datomic.net:8182"
-                    :creds-profile "mt2-prod"
-                    :proxy-port    8187})
 
-  (def prod-client (d/client prod-config))
+  (def prod-client (db-util/prod-client!))
 
-  (def provider-employment-initiation-form-template-id
-    [:workflow.form/id #uuid "7419cbe7-d25a-4303-9846-cb2c4e6b2b34"])
+  @(def all-production-databases
+     (d/list-databases prod-client {}))
 
-  (def baseline-dbn "capitalhsi-baseline")
-  (def training-dbn "capitalhsi-training")
-
-  (def pattern
-    '[* {:workflow.form/sectionmaps
-         [* {:form.sectionmap/section
-             [{:workflow.section/fieldmaps
-               [:workflow.fieldmap/field
-                :workflow.fieldmap/ordinal
-                :workflow.fieldmap/id
-                :workflow.fieldmap/triggers
-                :workflow.fieldmap/hidden?]}]}]}])
-
-  (def baseline-form-template
+  @(def baseline-form-template
     (let [conn (d/connect prod-client {:db-name baseline-dbn})
-          db (d/db conn)]
+          db   (d/db conn)]
       (d/pull db pattern provider-employment-initiation-form-template-id)))
 
-  (def training-form-template
+  @(def training-form-template
     (let [conn (d/connect prod-client {:db-name training-dbn})
           db (d/db conn)]
       (d/pull db pattern provider-employment-initiation-form-template-id)))
 
-  @(def all-production-databases
-     (d/list-databases prod-client {})))
+  @(def diff-baseline-training
+     (let [[things-only-in-a things-only-in-b _ :as diff]
+           (data/diff (strip-eids baseline-form-template)
+                      (strip-eids training-form-template))]
+       [things-only-in-a things-only-in-b]))
+  ;; => [nil nil]
+
+  ;; so right now they're identical
+
+  )
