@@ -257,13 +257,26 @@
 
   @(def training-form-template-history-all-fieldmaps-for-first-section
      (let [history-db (d/history (d/db training-conn))]
-       (d/q '[:find ?tx ?val ?op ?workflow-fieldmap-id
-              :in $ ?section
-              :where
-              [?fieldmap :workflow.fieldmap/hidden? ?val ?tx ?op]
-              [?fieldmap :workflow.fieldmap/id ?workflow-fieldmap-id]
-              [?section :workflow.section/fieldmaps ?fieldmap]]
-            history-db 83562883715272)))
+       (->> 
+        (d/q '[:find ?tx ?val ?op ?workflow-fieldmap-id
+               :keys tx val op workflow-fieldmap-id
+               :in $ ?section
+               :where
+               [?fieldmap :workflow.fieldmap/hidden? ?val ?tx ?op]
+               [?fieldmap :workflow.fieldmap/id ?workflow-fieldmap-id]
+               [?section :workflow.section/fieldmaps ?fieldmap]]
+             history-db 83562883715272)
+        (group-by :tx))))
+
+  (d/pull (d/db training-conn)
+          '[* {:transaction/user-op [* {:user-op/who [:user/email :user/name]}]}]
+          13194139535430
+          )
+
+  (map #(d/pull (d/db training-conn)
+                '[* {:transaction/user-op [* {:user-op/who [:user/email :user/name]}]}] %)
+       [13194139538714 13194139534238 13194139535429 13194139535430 13194139534238
+        13194139538714 13194139538709 13194139538709 13194139534238 13194139538709 ])
 
   ;; [[13194139538714 true true #uuid "ff1ef28f-f05c-4a5e-9b6f-65e9adf173a3"]
   ;;  [13194139534238 true true #uuid "883f3549-75ae-4995-99ec-888122025484"]
@@ -276,6 +289,33 @@
   ;;  [13194139534238 true true #uuid "b70973b2-6075-4bc5-bda6-6e467b5abbd3"]
   ;;  [13194139538709 true true #uuid "4b134f46-42bc-4138-ae68-c5e3c4a9b913"]]
 
-  ;; SUS
+  @(def many-eids-associated-with-form-in-training
+     (let [sectionmaps (->> training-form-template
+                            :workflow.form/sectionmaps
+                            (map :db/id))
+           sections (->> training-form-template
+                         :workflow.form/sectionmaps
+                         (map :form.sectionmap/section)
+                         (map :db/id))
+           fieldmaps (->> training-form-template
+                          :workflow.form/sectionmaps
+                          (map :form.sectionmap/section)
+                          (mapcat :workflow.section/fieldmaps)
+                          (map :db/id))]
+       (set (flatten [sectionmaps sections fieldmaps]))))
+
+  @(def transactions-associated-with-many-entities-associated-with-the-form-in-training
+    (d/q '[:find (pull ?t [* {:transaction/user-op [*]}]) ?eid
+           :in $ [?eid ...]
+           :where
+           [?eid ?a ?v ?t]]
+         (d/db training-conn) many-eids-associated-with-form-in-training))
+  ;; i don't see non-baseline `:user-op/where.path`
+  ;; i only see baseline. which i take to mean that the work was done in baseline, via ui
+  ;; then when we cloned this, we carried fwd the orig `:transaction/user-op`
+  ;; this surprises me, because i thought users were fixing this post clone, in training
+  ;; and so we'd see traces of "-training" user ops
+ 
+  
 
   )
